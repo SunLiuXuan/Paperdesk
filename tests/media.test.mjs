@@ -1,0 +1,11 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import vm from 'node:vm';
+import fs from 'node:fs/promises';
+import {validateLibrary} from '../storage.mjs';
+const source=await fs.readFile(new URL('../dist/app.js',import.meta.url),'utf8');
+const sandbox=vm.createContext({URL});vm.runInContext(source.slice(source.indexOf('const examples='),source.indexOf('let diskReady=')),sandbox);
+const png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jBFEAAAAASUVORK5CYII=';
+test('alphaXiv links support abs, PDF, versions and legacy identifiers',()=>{for(const [link,expected] of [['https://arxiv.org/abs/2501.12345','https://www.alphaxiv.org/abs/2501.12345'],['https://arxiv.org/pdf/2501.12345v2.pdf','https://www.alphaxiv.org/abs/2501.12345v2'],['https://arxiv.org/abs/hep-th/9901001','https://www.alphaxiv.org/abs/hep-th/9901001'],['https://evil.example/abs/2501.12345','']])assert.equal(sandbox.alphaLink(link),expected)});
+test('browser backup validation retains images and rejects unsafe formats',()=>{assert.equal(sandbox.validateImages([{data:png,caption:'架构图'}])[0].data,png);assert.throws(()=>sandbox.validateImages([{data:'data:image/svg+xml;base64,AAAA',caption:''}]));assert.throws(()=>sandbox.validateImages(Array(7).fill({data:png,caption:''})))});
+test('disk library validation accepts embedded figures and blocks unsafe image data',()=>{const papers=[{id:'image-test',title:'test',tags:[],images:[{data:png,caption:'架构图'}]}];assert.deepEqual(validateLibrary(JSON.parse(JSON.stringify(papers))),papers);papers[0].images[0].data='javascript:alert(1)';assert.throws(()=>validateLibrary(papers),/图片格式/)});
