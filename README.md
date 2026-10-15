@@ -217,3 +217,13 @@ SEMANTIC_SCHOLAR_API_KEY=你的SemanticScholar密钥
 该密钥与 AI 密钥不同，仅发送给 Semantic Scholar。可在 [Semantic Scholar API 页面](https://www.semanticscholar.org/product/api)申请；配置后重启服务。Crossref 无需此密钥，一个来源出错不会阻止另一个来源显示。
 
 新增此功能后须关闭旧服务窗口，重新运行 `start.cmd`，再 Ctrl+F5 刷新。单文件版不支持联网查询。实现位于 `metadata.mjs`；自动化测试使用模拟响应，不依赖第三方网络。
+
+### 录用会议／期刊标记
+
+新建或编辑笔记时，在“录用会议／期刊”填写 `CVPR2026` 等名称。保存后在卡片缩写旁以小字显示，详情页也会显示；不填则隐藏。支持搜索此字段，并随 JSON 备份及 Markdown 导出保留。此字段由你核实后填写，联网查询结果不会自动写入。
+
+### AI 补充会议／期刊和 Code
+
+AI 草稿现在包含“会议/期刊”，可以勾选并修改后填入表单。arXiv 生成流程除摘要外还读取作者备注、journal_ref 和 DOI，并查询 Semantic Scholar / Crossref 的发表信息。数据库不可用不阻断 AI 草稿。投稿或审稿中不等于录用，标题匹配候选需要核对。
+
+Code 从摘要、作者备注及用户提供内容中的明确链接提取；目前不是全网代码搜索，不会猜测 GitHub 地址。没有明确来源时留空，可粘贴官方项目介绍后重新生成。概览表格与 CSV 已新增“会议/期刊”列。升级后重启 start.cmd，并 Ctrl+F5 刷新。

@@ -6,7 +6,7 @@ import {randomBytes} from 'node:crypto';
 import {createLibraryStore} from './storage.mjs';
 import {lookupMetadata} from './metadata.mjs';
 const root=path.dirname(fileURLToPath(import.meta.url));
-const fields=['title','alias','published','summary','datasets','results','paper','code','dataset_url','notes'];
+const fields=['title','alias','venue','published','summary','datasets','results','paper','code','dataset_url','notes'];
 export function cleanDraft(value,source){
  if(!value||typeof value!=='object'||Array.isArray(value))throw Error('模型返回的草稿格式不正确，请重试。');
  const out={};for(const key of fields)out[key]=typeof value[key]==='string'?value[key].slice(0,18000):'';
@@ -26,10 +26,16 @@ export async function generate(input,config,fetcher=fetch){
  let source=input.source.trim(),basis='根据你提供的内容生成，未读取论文全文。',metadata=null;
  if(input.url&&!/^https?:\/\//i.test(input.url))throw Error('请输入 http 或 https 论文链接。');
  const id=arxivId(input.url);
- if(id){try{const response=await fetcher('https://export.arxiv.org/api/query?id_list='+encodeURIComponent(id),{signal:AbortSignal.timeout(20000),redirect:'error'});if(!response.ok)throw Error();const xml=await boundedText(response);const entry=xml.match(/<entry>([\s\S]*?)<\/entry>/)?.[1];if(!entry)throw Error();const get=tag=>decode(entry.match(new RegExp('<'+tag+'[^>]*>([\\s\\S]*?)</'+tag+'>'))?.[1]||'').replace(/\s+/g,' ');metadata={title:get('title'),published:get('published').slice(0,10),paper:'https://arxiv.org/abs/'+id};const abstract=get('summary');if(!abstract||metadata.title==='Error')throw Error();source=`标题：${metadata.title}\n首次发表：${metadata.published}\n论文：${metadata.paper}\n摘要：${abstract}\n\n用户补充：\n${source}`;basis='已读取 arXiv 标题、首次发表时间和摘要；未读取 PDF 全文。'}catch{if(!source)throw Error('无法读取 arXiv 摘要，请稍后重试，或粘贴摘要后生成。');basis='arXiv 读取失败，本次仅依据你粘贴的内容。'}}
+ if(id){try{const response=await fetcher('https://export.arxiv.org/api/query?id_list='+encodeURIComponent(id),{signal:AbortSignal.timeout(20000),redirect:'error'});if(!response.ok)throw Error();const xml=await boundedText(response);const entry=xml.match(/<entry>([\s\S]*?)<\/entry>/)?.[1];if(!entry)throw Error();const get=tag=>decode(entry.match(new RegExp('<'+tag+'[^>]*>([\\s\\S]*?)</'+tag+'>'))?.[1]||'').replace(/\s+/g,' ');metadata={title:get('title'),published:get('published').slice(0,10),paper:'https://arxiv.org/abs/'+id};const abstract=get('summary');const publicationDetails='arXiv 作者备注：'+get('arxiv:comment')+'\n期刊/会议引用：'+get('arxiv:journal_ref')+'\nDOI：'+get('arxiv:doi');if(!abstract||metadata.title==='Error')throw Error();source=`标题：${metadata.title}\n首次发表：${metadata.published}\n论文：${metadata.paper}\n摘要：${abstract}\n${publicationDetails}\n\n用户补充：\n${source}`;basis='已读取 arXiv 标题、首次发表时间、摘要、作者备注及发表引用；未读取 PDF 全文。'}catch{if(!source)throw Error('无法读取 arXiv 摘要，请稍后重试，或粘贴摘要后生成。');basis='arXiv 读取失败，本次仅依据你粘贴的内容。'}}
  else if(!source)throw Error('链接自动读取暂支持 arXiv。其他论文请同时粘贴摘要或正文。');
  else if(input.url)basis='未自动读取该网址，本次仅依据粘贴内容和你提供的链接。';
  source+='\n用户提供的论文链接：'+input.url;
+ if(metadata?.title){
+  const records=await lookupMetadata({title:metadata.title,paper:metadata.paper},config,fetcher);
+  const found=records.sources.filter(s=>s.status==='found'&&s.venue&&!/arxiv|preprint/i.test(s.venue));
+  if(found.length){source+='\n发表信息数据库记录（请区分标识匹配与同标题候选）：\n'+JSON.stringify(found.map(s=>({source:s.source,title:s.title,venue:s.venue,year:s.year,publication:s.publication,matchedBy:s.matchedBy,url:s.url})));basis+=' 已补充发表信息数据库记录，标题候选需核对。';}
+  else basis+=' 数据库未提供可用发表场所，可能尚未收录或服务不可用；将依据作者备注等来源整理。';
+ }
  const tagPool=Array.isArray(input.tags)?input.tags.filter(x=>typeof x==='string').slice(0,100).map(x=>x.slice(0,40)):[];
  let endpoint;try{endpoint=new URL(config.base.replace(/\/$/,'')+'/chat/completions');if(endpoint.protocol!=='https:'&&!(endpoint.protocol==='http:'&&['127.0.0.1','localhost','[::1]'].includes(endpoint.hostname)))throw Error()}catch{throw Error('API_BASE_URL 必须是 HTTPS 地址，或本地模型的 HTTP 地址。')}
  const response=await fetcher(endpoint,{method:'POST',redirect:'error',signal:AbortSignal.timeout(90000),headers:{'Authorization':'Bearer '+config.key,'Content-Type':'application/json'},body:JSON.stringify({model:config.model,response_format:{type:'json_object'},messages:[{role:'system',content:await fs.readFile(path.join(root,'prompts','paper-summary.txt'),'utf8')},{role:'user',content:JSON.stringify({existing_tags:tagPool,source})}]})});
