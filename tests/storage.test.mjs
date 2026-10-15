@@ -3,8 +3,20 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {createLibraryStore} from '../storage.mjs';
+import {createLibraryStore,pruneBackups} from '../storage.mjs';
 const paper=title=>[{id:'p1',title,tags:['test'],notes:'我的笔记'}];
+test('successful saves retain only the latest three backups, preserving current data and unrelated files',()=>fixture(async(dir,store)=>{
+ let current=await store.save(paper('0'),null);
+ await fs.writeFile(path.join(dir,'backups','manual.json'),'keep');
+ for(let i=1;i<=8;i++)current=await store.save(paper(String(i)),current.revision);
+ const names=(await fs.readdir(path.join(dir,'backups'))).filter(n=>n.startsWith('library-'));
+ assert.equal(names.length,3);
+ const titles=await Promise.all(names.map(async n=>JSON.parse(await fs.readFile(path.join(dir,'backups',n),'utf8'))[0].title));
+ assert.deepEqual(titles.sort(),['5','6','7']);assert.equal((await store.read()).papers[0].title,'8');
+ assert.equal(await fs.readFile(path.join(dir,'backups','manual.json'),'utf8'),'keep');
+ await fs.writeFile(path.join(dir,'library.json'),'broken');
+ await assert.rejects(pruneBackups(dir));assert.equal((await fs.readdir(path.join(dir,'backups'))).length,4);
+}));
 async function fixture(fn){const dir=await fs.mkdtemp(path.join(os.tmpdir(),'paperdesk-storage-'));try{await fn(dir,createLibraryStore(dir))}finally{await fs.rm(dir,{recursive:true,force:true})}}
 test('saved library survives a new store instance and has readable JSON',()=>fixture(async(dir,store)=>{assert.equal((await store.read()).exists,false);await store.save(paper('第一版'),null);assert.deepEqual((await createLibraryStore(dir).read()).papers,paper('第一版'));assert.deepEqual(JSON.parse(await fs.readFile(path.join(dir,'library.json'),'utf8')),paper('第一版'))}));
 test('editing, deletion and import preserve previous versions',()=>fixture(async(dir,store)=>{const first=await store.save(paper('原始笔记'),null);const second=await store.save(paper('修改'),first.revision);assert.deepEqual(JSON.parse(await fs.readFile(second.backup,'utf8')),paper('原始笔记'));const deleted=await store.save([],second.revision);assert.deepEqual(JSON.parse(await fs.readFile(deleted.backup,'utf8')),paper('修改'));await store.save(paper('导入'),deleted.revision);assert.equal((await fs.readdir(path.join(dir,'backups'))).length,3)}));
