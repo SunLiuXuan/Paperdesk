@@ -20,13 +20,42 @@ export function cleanDraft(value,source){
 function decode(s){return s.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&apos;/g,"'").replace(/&amp;/g,'&').replace(/&#(\d+);/g,(_,n)=>String.fromCodePoint(Number(n))).trim()}
 export function arxivId(link){try{const u=new URL(link);if(!['arxiv.org','www.arxiv.org','export.arxiv.org'].includes(u.hostname)||u.protocol!=='https:')return null;return u.pathname.match(/^\/(?:abs|pdf)\/(\d{4}\.\d{4,5}(?:v\d+)?|[a-z-]+(?:\.[A-Z]{2})?\/\d{7}(?:v\d+)?)(?:\.pdf)?\/?$/)?.[1]||null}catch{return null}}
 async function boundedText(response,limit=1000000){const reader=response.body.getReader();let count=0,parts=[];try{while(true){const {done,value}=await reader.read();if(done)break;count+=value.length;if(count>limit)throw Error('响应内容过大，请缩短输入。');parts.push(Buffer.from(value))}}finally{await reader.cancel().catch(()=>{})}return Buffer.concat(parts).toString('utf8')}
+export async function readArxiv(id,fetcher=fetch){
+ if(arxivId('https://arxiv.org/abs/'+id)!==id)throw Error('论文编号无效');
+ const errors=[];
+ for(const kind of ['API','摘要页']){
+  try{
+   const endpoint=kind==='API'?'https://export.arxiv.org/api/query?id_list='+encodeURIComponent(id):'https://arxiv.org/abs/'+id;
+   const response=await fetcher(endpoint,{signal:AbortSignal.timeout(15000),redirect:'error'});
+   if(!response.ok)throw Error('HTTP '+response.status+(response.status===429?'（限流）':''));
+   const body=await boundedText(response);
+   let record;
+   if(kind==='API'){
+    const entry=body.match(/<entry>([\s\S]*?)<\/entry>/)?.[1]||'';
+    const get=tag=>decode(entry.match(new RegExp('<'+tag+'[^>]*>([\\s\\S]*?)</'+tag+'>'))?.[1]||'').replace(/\s+/g,' ');
+    record={title:get('title'),abstract:get('summary'),published:get('published').slice(0,10),details:'arXiv 作者备注：'+get('arxiv:comment')+'\n期刊/会议引用：'+get('arxiv:journal_ref')+'\nDOI：'+get('arxiv:doi'),basis:'已读取 arXiv 标题、首次发表时间、摘要、作者备注及发表引用；未读取 PDF 全文。'};
+   }else{
+    const metas={};
+    for(const tag of body.match(/<meta\b[^>]*>/gi)||[]){const attrs={};for(const a of tag.matchAll(/([\w-]+)\s*=\s*(["'])([\s\S]*?)\2/g))attrs[a[1].toLowerCase()]=a[3];if(attrs.name)metas[attrs.name]=decode(attrs.content||'');}
+    record={title:metas.citation_title||'',abstract:metas.citation_abstract||'',published:(metas.citation_date||'').replaceAll('/','-'),details:metas.citation_doi?'DOI：'+metas.citation_doi:'',basis:'arXiv API 暂不可用，已从官方摘要页读取标题、摘要和日期；未读取 PDF 全文或作者备注。'};
+   }
+   if(!record.title||record.title==='Error'||!record.abstract)throw Error('未返回有效标题和摘要');
+   return record;
+  }catch(e){errors.push(kind+' '+(e.name==='TimeoutError'?'连接超时':/^HTTP|^未返回/.test(e.message)?e.message:'连接失败或响应异常'));}
+ }
+ throw Error(errors.join('；'));
+}
 export async function generate(input,config,fetcher=fetch){
  if(!config.key||!config.model)throw Error('请先在 .env 中配置 API Key 和模型，然后重启本地服务。');
  if(typeof input?.source!=='string'||input.source.length>60000||typeof input?.url!=='string'||input.url.length>2000)throw Error('输入格式不正确或过长，最多粘贴 60,000 字符。');
  let source=input.source.trim(),basis='根据你提供的内容生成，未读取论文全文。',metadata=null;
  if(input.url&&!/^https?:\/\//i.test(input.url))throw Error('请输入 http 或 https 论文链接。');
  const id=arxivId(input.url);
- if(id){try{const response=await fetcher('https://export.arxiv.org/api/query?id_list='+encodeURIComponent(id),{signal:AbortSignal.timeout(20000),redirect:'error'});if(!response.ok)throw Error();const xml=await boundedText(response);const entry=xml.match(/<entry>([\s\S]*?)<\/entry>/)?.[1];if(!entry)throw Error();const get=tag=>decode(entry.match(new RegExp('<'+tag+'[^>]*>([\\s\\S]*?)</'+tag+'>'))?.[1]||'').replace(/\s+/g,' ');metadata={title:get('title'),published:get('published').slice(0,10),paper:'https://arxiv.org/abs/'+id};const abstract=get('summary');const publicationDetails='arXiv 作者备注：'+get('arxiv:comment')+'\n期刊/会议引用：'+get('arxiv:journal_ref')+'\nDOI：'+get('arxiv:doi');if(!abstract||metadata.title==='Error')throw Error();source=`标题：${metadata.title}\n首次发表：${metadata.published}\n论文：${metadata.paper}\n摘要：${abstract}\n${publicationDetails}\n\n用户补充：\n${source}`;basis='已读取 arXiv 标题、首次发表时间、摘要、作者备注及发表引用；未读取 PDF 全文。'}catch{if(!source)throw Error('无法读取 arXiv 摘要，请稍后重试，或粘贴摘要后生成。');basis='arXiv 读取失败，本次仅依据你粘贴的内容。'}}
+ if(id){try{
+  const record=await readArxiv(id,fetcher);metadata={title:record.title,published:record.published,paper:'https://arxiv.org/abs/'+id};
+  source=`标题：${record.title}\n首次发表：${record.published}\n论文：${metadata.paper}\n摘要：${record.abstract}\n${record.details}\n\n用户补充：\n${source}`;
+  basis=record.basis;
+ }catch(e){if(!source)throw Error('无法读取 arXiv 摘要：'+e.message+'。请稍后重试，或粘贴摘要后生成。');basis='arXiv 读取失败，本次仅依据你粘贴的内容。'}}
  else if(!source)throw Error('链接自动读取暂支持 arXiv。其他论文请同时粘贴摘要或正文。');
  else if(input.url)basis='未自动读取该网址，本次仅依据粘贴内容和你提供的链接。';
  source+='\n用户提供的论文链接：'+input.url;
