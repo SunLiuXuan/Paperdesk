@@ -4,7 +4,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {randomBytes} from 'node:crypto';
 import {createLibraryStore} from './storage.mjs';
-import {lookupMetadata} from './metadata.mjs';
+import {lookupMetadata,lookupGithub} from './metadata.mjs';
 const root=path.dirname(fileURLToPath(import.meta.url));
 const fields=['title','alias','venue','published','summary','datasets','results','paper','code','dataset_url','notes'];
 export function cleanDraft(value,source){
@@ -60,6 +60,14 @@ export function createApp(config,fetcher=fetch){
   if(req.headers.origin&&req.headers.origin!=='http://'+host)return send(403,{error:'请求来源不受支持。'});
   try{
    if(req.url==='/api/library'&&req.method==='GET')return send(200,await library.read());
+   if(req.url==='/api/github'&&req.method==='POST'){
+    if(req.headers['x-paperdesk-token']!==token)return send(403,{error:'请刷新页面后重试。'});
+    if(!req.headers['content-type']?.startsWith('application/json'))return send(415,{error:'需要 JSON 请求。'});
+    try{let size=0,chunks=[];for await(const chunk of req){size+=chunk.length;if(size>4000)return send(413,{error:'链接过长。'});chunks.push(chunk)}
+     const input=JSON.parse(Buffer.concat(chunks).toString('utf8'));
+     return send(200,await lookupGithub(input.code,fetcher,config.githubToken));
+    }catch(e){return send(400,{error:/^请填写|^仓库|^服务|^数据源|^GitHub/.test(e.message)?e.message:'GitHub 查询失败，请稍后重试。'})}
+   }
    if(req.url==='/api/metadata'&&req.method==='POST'){
     if(req.headers['x-paperdesk-token']!==token)return send(403,{error:'请刷新页面后重试。'});
     if(!req.headers['content-type']?.startsWith('application/json'))return send(415,{error:'需要 JSON 请求。'});
@@ -93,6 +101,6 @@ export function createApp(config,fetcher=fetch){
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){
  try{process.loadEnvFile(path.join(root,'.env'))}catch(e){if(e.code!=='ENOENT')throw e}
- const config={key:process.env.AI_API_KEY||'',model:process.env.AI_MODEL||'',base:process.env.AI_BASE_URL||'https://api.openai.com/v1',scholarKey:process.env.SEMANTIC_SCHOLAR_API_KEY||''};
+ const config={key:process.env.AI_API_KEY||'',model:process.env.AI_MODEL||'',base:process.env.AI_BASE_URL||'https://api.openai.com/v1',scholarKey:process.env.SEMANTIC_SCHOLAR_API_KEY||'',githubToken:process.env.GITHUB_TOKEN||''};
  const server=createApp(config);server.listen(4174,'127.0.0.1',()=>console.log('Paperdesk: http://127.0.0.1:4174\n'+(config.key&&config.model?'AI configured.':'AI not configured. See docs/AI-SETUP.md.')));server.on('error',()=>{console.error('无法启动：端口 4174 可能被占用。');process.exitCode=1});
 }

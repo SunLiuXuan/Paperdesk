@@ -148,3 +148,24 @@ dialog { width:min(750px,calc(100vw - 40px)); max-width:none; max-height:calc(10
 .paper-metadata{margin:24px 0;padding:18px;border:1px solid var(--line);border-radius:9px;background:#fafcfb}.metadata-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}.metadata-heading h3{margin:0}.metadata-heading button{flex-shrink:0}.paper-metadata .hint{margin:12px 0;line-height:1.8}.metadata-source{padding:14px 0;border-top:1px solid var(--line);overflow-wrap:anywhere}.metadata-source p{font-size:13px;line-height:1.8;margin:6px 0}.metadata-source small,.metadata-time{color:#7d8b82;font-size:12px}.metadata-source a{font-size:13px}#metadata-result{font-size:13px;line-height:1.8}@media(max-width:540px){.paper-metadata{padding:12px}.metadata-heading{align-items:flex-start;flex-wrap:wrap}}
 
 .card-identity{display:flex;align-items:baseline;flex-wrap:wrap;gap:5px 9px;min-width:0;flex:1}.card-identity .alias{overflow-wrap:anywhere}.venue-label{font-size:11px;font-family:'DM Sans','Noto Sans SC',sans-serif;font-weight:500;color:#7b8e81;line-height:1.5;overflow-wrap:anywhere}.card-top{gap:10px;align-items:flex-start}.card-top>.status{flex-shrink:0}
+
+/* Keep every venue beneath the alias, with independent status/star controls. */
+.card-identity{flex-direction:column;align-items:flex-start;gap:5px;min-width:0}.card-identity .venue-label{display:block;font-size:12px;line-height:1.5}.card-controls{display:flex;align-items:center;gap:5px;flex-shrink:0}.paper-star{border:0;background:transparent;color:#9aa5a0;font-size:22px;line-height:1;width:34px;min-height:34px;padding:5px;border-radius:6px;flex-shrink:0}.paper-star:hover{background:#f5f0df;color:#a77a1f}.paper-star.starred{color:#b4892d;background:#fbf5e5}#star-filter{white-space:nowrap}#star-filter.active{color:#946b1e;background:#fbf5e5;border-color:#ddc68b}.filters{flex-wrap:wrap}.filters .search{min-width:160px}.card-top{align-items:flex-start}@media(max-width:540px){.paper-star{width:40px;min-height:40px}.card-controls{gap:2px}.card-controls .status{white-space:nowrap}}
+
+/* Quiet outline stars; a warm fill indicates a saved favorite. */
+.paper-star{display:inline-flex;align-items:center;justify-content:center;width:32px;min-height:32px;padding:7px;background:transparent;border:0;border-radius:8px;color:#a4aea8;transition:color .15s,background .15s}
+.star-icon{display:block;width:18px;height:18px;flex:none;fill:none;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+.paper-star:hover{color:#aa8336;background:#f7f3e9}.paper-star.starred{color:#b58a35;background:transparent}.paper-star.starred .star-icon{fill:#e9c777;stroke:#b58a35}.paper-star:focus-visible{outline:2px solid #7c9a88;outline-offset:2px}
+.table-identity{display:flex;align-items:center;gap:5px;margin-bottom:5px}.table-identity b{min-width:0;overflow-wrap:anywhere}.table-identity .paper-star{width:28px;min-height:28px;padding:5px}
+@media(min-width:541px){.overview-table{table-layout:fixed}.overview-table th:nth-child(1){width:26%}.overview-table th:nth-child(2){width:12%}.overview-table th:nth-child(3){width:11%}.overview-table th:nth-child(4){width:31%}.overview-table th:nth-child(5){width:13%}.overview-table th:nth-child(6){width:7%}.overview-table td{max-width:none;vertical-align:top;overflow-wrap:anywhere}.overview-table th,.overview-table td{padding-left:12px;padding-right:12px}}
+@media(max-width:540px){.paper-star{width:40px;min-height:40px;padding:10px}.table-identity .paper-star{width:36px;min-height:36px;padding:8px}}
+@media(min-width:541px){.overview-table{min-width:860px}}
+
+/* Preserve full short aliases; fit longer ones without moving the controls. */
+.card-identity{flex:1 1 0%;flex-wrap:nowrap;min-width:0}
+.card-identity .alias{display:block;width:100%;min-width:0;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal;font-size:21px;line-height:27px}
+
+/* Center metadata items without stretching the status badge to button height. */
+.detail-meta{align-items:center;line-height:20px}
+.detail-meta>.status{display:inline-flex;align-items:center;line-height:16px}
+.github-metrics{border-top:1px solid var(--line);padding-top:12px;margin-top:16px;font-size:13px;overflow-wrap:anywhere}.github-metrics button{margin-left:10px;padding:5px 10px;font-size:12px}.github-metrics p{line-height:1.8}.github-metrics small{color:#7d8b82}

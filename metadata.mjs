@@ -12,6 +12,16 @@ export function identifiers(link){
 async function request(endpoint,fetcher,headers={}){
  const response=await fetcher(endpoint,{headers,redirect:'error',signal:AbortSignal.timeout(15000)});
  if(response.status===404)return null;
+ if(!response.ok&&endpoint.startsWith('https://api.github.com/')){
+  if(response.headers.get('x-ratelimit-remaining')==='0'){
+   const reset=Number(response.headers.get('x-ratelimit-reset'));
+   const when=reset>0&&Number.isFinite(reset)&&reset<8640000000000?'，预计 '+new Date(reset*1000).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai'})+'（北京时间）恢复':'';
+   throw Error('GitHub 请求额度已用完'+when+'。可配置 GITHUB_TOKEN 提高匿名请求额度。');
+  }
+  if(response.status===401)throw Error('GitHub Token 无效或已过期，请更新 .env 中的 GITHUB_TOKEN 并重启服务。');
+  if(response.status===429||response.headers.has('retry-after'))throw Error('GitHub 请求过于频繁，请稍后重试。');
+  if(response.status===403)throw Error('GitHub 拒绝访问（HTTP 403），可能是临时限流或 Token 权限限制，请稍后重试并检查 GitHub Token。');
+ }
  if(!response.ok){const e=Error(response.status===429?'服务限流，请稍后重试':response.status===401||response.status===403?'服务拒绝访问，请检查权限或 API Key':`服务返回 HTTP ${response.status}`);throw e;}
  const reader=response.body.getReader();let size=0;const chunks=[];
  try{while(true){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>2000000)throw Error('数据源响应过大');chunks.push(Buffer.from(value));}}finally{await reader.cancel().catch(()=>{})}
@@ -20,6 +30,20 @@ async function request(endpoint,fetcher,headers={}){
 function candidates(list,title){const key=normalized(title);return key?list.filter(p=>normalized(Array.isArray(p.title)?p.title[0]:p.title)===key):[];}
 const count=n=>Number.isSafeInteger(n)&&n>=0?n:null;
 const text=s=>typeof s==='string'?s.slice(0,1000):'';
+export async function lookupGithub(link,fetcher=fetch,token=''){
+ let repo;
+ try{const u=new URL(link);const parts=u.pathname.split('/').filter(Boolean);
+  if(u.protocol!=='https:'||u.hostname!=='github.com'||u.port||u.username||u.password||parts.length<2)throw Error();
+  const owner=parts[0],name=parts[1].replace(/\.git$/,'');
+  if(!/^[a-zA-Z0-9-]+$/.test(owner)||! /^[a-zA-Z0-9_.-]+$/.test(name)||['.','..'].includes(name))throw Error();
+  repo=owner+'/'+name;
+ }catch{throw Error('请填写有效的 GitHub 仓库链接。')}
+ const headers={'Accept':'application/vnd.github+json','User-Agent':'PaperDesk'};
+ if(token.trim())headers.Authorization='Bearer '+token.trim();
+ const p=await request('https://api.github.com/repos/'+repo,fetcher,headers);
+ if(!p)throw Error('仓库不存在或不是公开仓库。');
+ return {repository:repo,url:'https://github.com/'+repo,stars:count(p.stargazers_count),queriedAt:new Date().toISOString()};
+}
 function publication(venue,type){
  if(!venue||/arxiv|biorxiv|medrxiv|preprint/i.test(venue))return '未查到会议／期刊收录记录（不代表未录用）';
  if(type==='journal')return '数据库记录为期刊论文';
